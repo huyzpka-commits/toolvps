@@ -584,6 +584,290 @@ def kill_background_apps():
     print_color(f"\n  [+] Tổng số process đã tắt: {killed}", FOREGROUND_GREEN + FOREGROUND_INTENSITY)
     print_color("=" * 70, FOREGROUND_CYAN)
 
+def optimize_network():
+    print_banner()
+    print_color("  [ TOI UU MANG (NETWORK) ]", FOREGROUND_CYAN + FOREGROUND_INTENSITY)
+    print_color("-" * 70, FOREGROUND_CYAN)
+    
+    if not is_admin():
+        print_color("  [CANH BAO] Chua chay voi quyen Administrator! Mot so toi uu se bi gioi han.", FOREGROUND_RED)
+    
+    # 1. Flush DNS
+    print_color("  [1] Dang xoa DNS cache...", FOREGROUND_WHITE)
+    try:
+        subprocess.run(["ipconfig", "/flushdns"], capture_output=True, check=False)
+        print_color("  -> DNS cache da duoc xoa", FOREGROUND_GREEN)
+    except Exception as e:
+        print_color(f"  -> Loi: {str(e)[:50]}", FOREGROUND_RED)
+    
+    # 2. TCP Registry Optimizations
+    print_color("\n  [2] Dang toi uu TCP/IP stack...", FOREGROUND_WHITE)
+    tcp_params = [
+        ("TcpNoDelay", 1),
+        ("TcpAckFrequency", 1),
+        ("TCPWindowSize", 65535),
+        ("GlobalMaxTcpWindowSize", 65535),
+        ("DefaultTTL", 64),
+        ("EnablePMTUDiscovery", 1),
+        ("SackOpts", 1),
+        ("TcpMaxDupAcks", 2),
+        ("DisableTaskOffload", 0),
+    ]
+    
+    try:
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                            r"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters", 
+                            0, winreg.KEY_SET_VALUE)
+        for name, value in tcp_params:
+            try:
+                winreg.SetValueEx(key, name, 0, winreg.REG_DWORD, value)
+            except Exception:
+                pass
+        winreg.CloseKey(key)
+        print_color("  -> TCP/IP registry da toi uu", FOREGROUND_GREEN)
+    except Exception as e:
+        print_color(f"  -> Loi registry TCP: {str(e)[:50]}", FOREGROUND_RED)
+    
+    # 3. NIC RSS / Task Offload
+    print_color("\n  [3] Dang toi uu Network Interface (RSS, Offload)...", FOREGROUND_WHITE)
+    try:
+        subprocess.run(["netsh", "interface", "tcp", "set", "global", "autotuninglevel=normal"], 
+                     capture_output=True, check=False, timeout=10)
+        subprocess.run(["netsh", "interface", "tcp", "set", "global", "rss=enabled"], 
+                     capture_output=True, check=False, timeout=10)
+        subprocess.run(["netsh", "interface", "tcp", "set", "global", "netdma=enabled"], 
+                     capture_output=True, check=False, timeout=10)
+        subprocess.run(["netsh", "interface", "tcp", "set", "global", "timestamps=disabled"], 
+                     capture_output=True, check=False, timeout=10)
+        subprocess.run(["netsh", "interface", "tcp", "set", "global", "ecncapability=disabled"], 
+                     capture_output=True, check=False, timeout=10)
+        subprocess.run(["netsh", "interface", "tcp", "set", "global", "chimney=disabled"], 
+                     capture_output=True, check=False, timeout=10)
+        print_color("  -> Netsh TCP/IP global da toi uu", FOREGROUND_GREEN)
+    except Exception as e:
+        print_color(f"  -> Loi netsh: {str(e)[:50]}", FOREGROUND_RED)
+    
+    # 4. QoS / Multimedia Throttling
+    print_color("\n  [4] Dang toi uu QoS & Multimedia Throttling...", FOREGROUND_WHITE)
+    try:
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                            r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile", 
+                            0, winreg.KEY_SET_VALUE)
+        winreg.SetValueEx(key, "SystemResponsiveness", 0, winreg.REG_DWORD, 0)
+        winreg.CloseKey(key)
+        
+        key2 = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                             r"SOFTWARE\Policies\Microsoft\Windows\Psched", 
+                             0, winreg.KEY_SET_VALUE)
+        winreg.SetValueEx(key2, "NonBestEffortLimit", 0, winreg.REG_DWORD, 0)
+        winreg.CloseKey(key2)
+        print_color("  -> QoS & Throttling da toi uu", FOREGROUND_GREEN)
+    except Exception:
+        print_color("  -> QoS: Mot so gia tri khong ap dung duoc", FOREGROUND_YELLOW)
+    
+    # 5. Disable IPv6 (optional, ask user)
+    print_color("\n  [5] Tat IPv6 de giam overhead? (Nhap 'y' de tat, Enter de bo qua)", FOREGROUND_YELLOW)
+    ans = input("  > ").strip().lower()
+    if ans == 'y':
+        try:
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                                r"SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters", 
+                                0, winreg.KEY_SET_VALUE)
+            winreg.SetValueEx(key, "DisabledComponents", 0, winreg.REG_DWORD, 0xFF)
+            winreg.CloseKey(key)
+            print_color("  -> IPv6 da tat (can khoi dong lai)", FOREGROUND_GREEN)
+        except Exception as e:
+            print_color(f"  -> Loi tat IPv6: {str(e)[:50]}", FOREGROUND_RED)
+    
+    print_color("\n  [TIP] Khuyen nghi khoi dong lai may de ap dung toi uu mang.", FOREGROUND_CYAN)
+    print_color("=" * 70, FOREGROUND_CYAN)
+
+
+def optimize_ssd():
+    print_banner()
+    print_color("  [ TOI UU SSD ]", FOREGROUND_CYAN + FOREGROUND_INTENSITY)
+    print_color("-" * 70, FOREGROUND_CYAN)
+    
+    if not is_admin():
+        print_color("  [CANH BAO] Chua chay voi quyen Administrator!", FOREGROUND_RED)
+    
+    # Detect SSDs
+    print_color("  Dang quet o dia...", FOREGROUND_WHITE)
+    try:
+        import wmi
+    except ImportError:
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "wmi", "--quiet"])
+            import wmi
+        except Exception:
+            wmi = None
+    
+    ssd_found = False
+    drives = []
+    if wmi:
+        try:
+            c = wmi.WMI()
+            for disk in c.Win32_DiskDrive():
+                media = str(disk.MediaType).lower()
+                if "ssd" in media or "solid" in media:
+                    ssd_found = True
+                    drives.append(disk.DeviceID)
+                    print_color(f"  [SSD] {disk.Model} ({disk.Size/1GB:.0f} GB)", FOREGROUND_GREEN)
+        except Exception:
+            pass
+    
+    if not ssd_found:
+        # Fallback: try MSStorageDriver_FailurePredictStatus
+        try:
+            c = wmi.WMI()
+            for pd in c.Win32_DiskDrive():
+                if pd.MediaType and "fixed" in str(pd.MediaType).lower():
+                    # Check if rotational (not perfect but better than nothing)
+                    if "rotational" not in str(pd.MediaType).lower():
+                        ssd_found = True
+                        drives.append(pd.DeviceID)
+                        print_color(f"  [SSD?] {pd.Model} (MediaType: {pd.MediaType})", FOREGROUND_YELLOW)
+        except Exception:
+            pass
+    
+    if not ssd_found:
+        print_color("  [CANH BAO] Khong phat hien SSD ro rang. Toi uu van se chay (co the khong co hieu qua tren HDD).", FOREGROUND_YELLOW)
+    
+    # 1. TRIM
+    print_color("\n  [1] Kiem tra TRIM...", FOREGROUND_WHITE)
+    try:
+        result = subprocess.run(["fsutil", "behavior", "query", "DisableDeleteNotify"], 
+                               capture_output=True, text=True, check=False, timeout=10)
+        if "DisableDeleteNotify = 0" in result.stdout:
+            print_color("  -> TRIM da BAT (OK)", FOREGROUND_GREEN)
+        else:
+            subprocess.run(["fsutil", "behavior", "set", "DisableDeleteNotify", "0"], 
+                          capture_output=True, check=False, timeout=10)
+            print_color("  -> TRIM da duoc BAT", FOREGROUND_GREEN)
+    except Exception as e:
+        print_color(f"  -> Loi TRIM: {str(e)[:50]}", FOREGROUND_RED)
+    
+    # 2. Disable Last Access Timestamp
+    print_color("\n  [2] Tat Last Access Timestamp...", FOREGROUND_WHITE)
+    try:
+        subprocess.run(["fsutil", "behavior", "set", "DisableLastAccess", "1"], 
+                      capture_output=True, check=False, timeout=10)
+        print_color("  -> Last Access Timestamp: TAT", FOREGROUND_GREEN)
+    except Exception as e:
+        print_color(f"  -> Loi: {str(e)[:50]}", FOREGROUND_RED)
+    
+    # 3. Disable Prefetch & Superfetch
+    print_color("\n  [3] Tat Prefetch & Superfetch (khong can tren SSD)...", FOREGROUND_WHITE)
+    try:
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                            r"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters", 
+                            0, winreg.KEY_SET_VALUE)
+        winreg.SetValueEx(key, "EnablePrefetcher", 0, winreg.REG_DWORD, 0)
+        winreg.SetValueEx(key, "EnableSuperfetch", 0, winreg.REG_DWORD, 0)
+        winreg.SetValueEx(key, "EnableBoottrace", 0, winreg.REG_DWORD, 0)
+        winreg.CloseKey(key)
+        print_color("  -> Prefetch & Superfetch: TAT", FOREGROUND_GREEN)
+    except Exception as e:
+        print_color(f"  -> Loi registry: {str(e)[:50]}", FOREGROUND_RED)
+    
+    # 4. Disable Scheduled Defrag
+    print_color("\n  [4] Tat Scheduled Defrag...", FOREGROUND_WHITE)
+    try:
+        subprocess.run(["schtasks", "/Change", "/TN", r"\Microsoft\Windows\Defrag\ScheduledDefrag", "/DISABLE"], 
+                     capture_output=True, check=False, timeout=10)
+        print_color("  -> Scheduled Defrag: TAT", FOREGROUND_GREEN)
+    except Exception:
+        print_color("  -> Scheduled Defrag khong tim thay hoac da tat", FOREGROUND_YELLOW)
+    
+    # 5. Disable ClearPageFileAtShutdown
+    print_color("\n  [5] Tat ClearPageFileAtShutdown (giam write cycle)...", FOREGROUND_WHITE)
+    try:
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                            r"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management", 
+                            0, winreg.KEY_SET_VALUE)
+        winreg.SetValueEx(key, "ClearPageFileAtShutdown", 0, winreg.REG_DWORD, 0)
+        winreg.CloseKey(key)
+        print_color("  -> ClearPageFileAtShutdown: TAT", FOREGROUND_GREEN)
+    except Exception:
+        print_color("  -> Khong the set ClearPageFileAtShutdown", FOREGROUND_YELLOW)
+    
+    # 6. Increase NTFS Memory Usage
+    print_color("\n  [6] Tang NTFS Memory Usage...", FOREGROUND_WHITE)
+    try:
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                            r"SYSTEM\CurrentControlSet\Control\FileSystem", 
+                            0, winreg.KEY_SET_VALUE)
+        winreg.SetValueEx(key, "NtfsMemoryUsage", 0, winreg.REG_DWORD, 2)
+        winreg.CloseKey(key)
+        print_color("  -> NTFS MemoryUsage: 2 (High)", FOREGROUND_GREEN)
+    except Exception:
+        print_color("  -> Khong the set NtfsMemoryUsage", FOREGROUND_YELLOW)
+    
+    print_color("\n  [TIP] Khuyen nghi khoi dong lai de ap dung tat ca toi uu SSD.", FOREGROUND_CYAN)
+    print_color("=" * 70, FOREGROUND_CYAN)
+
+
+def toggle_windows_update():
+    print_banner()
+    print_color("  [ QUAN LY WINDOWS UPDATE ]", FOREGROUND_CYAN + FOREGROUND_INTENSITY)
+    print_color("-" * 70, FOREGROUND_CYAN)
+    print_color("  1. TAT Windows Update tam thoi", FOREGROUND_RED)
+    print_color("  2. BAT lai Windows Update", FOREGROUND_GREEN)
+    print_color("  0. Quay lai", FOREGROUND_WHITE)
+    print_color("-" * 70, FOREGROUND_CYAN)
+    
+    choice = input("  Nhap lua chon: ").strip()
+    
+    if choice == '1':
+        print_color("\n  Dang TAT Windows Update...", FOREGROUND_YELLOW)
+        services = ["wuauserv", "bits", "dosvc", "usosvc", "WaaSMedicSvc"]
+        for svc in services:
+            try:
+                subprocess.run(["sc", "stop", svc], capture_output=True, check=False, timeout=15)
+                subprocess.run(["sc", "config", svc, "start=", "disabled"], capture_output=True, check=False, timeout=15)
+                print_color(f"  [OK] {svc}: TAT", FOREGROUND_GREEN)
+            except Exception:
+                print_color(f"  [WARN] {svc}: Khong the tat", FOREGROUND_YELLOW)
+        
+        # Disable WaaSMedicSvc via registry (protected service)
+        try:
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                                r"SYSTEM\CurrentControlSet\Services\WaaSMedicSvc", 
+                                0, winreg.KEY_SET_VALUE)
+            winreg.SetValueEx(key, "Start", 0, winreg.REG_DWORD, 4)
+            winreg.CloseKey(key)
+        except Exception:
+            pass
+        
+        print_color("\n  [+] Windows Update da TAT tam thoi.", FOREGROUND_GREEN + FOREGROUND_INTENSITY)
+        print_color("  [TIP] Chon '2' trong menu nay de BAT lai khi can.", FOREGROUND_CYAN)
+        
+    elif choice == '2':
+        print_color("\n  Dang BAT Windows Update...", FOREGROUND_GREEN)
+        services = ["wuauserv", "bits", "dosvc", "usosvc"]
+        for svc in services:
+            try:
+                subprocess.run(["sc", "config", svc, "start=", "demand"], capture_output=True, check=False, timeout=15)
+                subprocess.run(["sc", "start", svc], capture_output=True, check=False, timeout=15)
+                print_color(f"  [OK] {svc}: BAT", FOREGROUND_GREEN)
+            except Exception:
+                print_color(f"  [WARN] {svc}: Khong the bat", FOREGROUND_YELLOW)
+        
+        # Re-enable WaaSMedicSvc
+        try:
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                                r"SYSTEM\CurrentControlSet\Services\WaaSMedicSvc", 
+                                0, winreg.KEY_SET_VALUE)
+            winreg.SetValueEx(key, "Start", 0, winreg.REG_DWORD, 3)
+            winreg.CloseKey(key)
+        except Exception:
+            pass
+        
+        print_color("\n  [+] Windows Update da BAT lai.", FOREGROUND_GREEN + FOREGROUND_INTENSITY)
+    
+    print_color("=" * 70, FOREGROUND_CYAN)
+
+
 def auto_optimize_all():
     print_banner()
     print_color("  [ TỰ ĐỘNG TỐI ƯU TOÀN BỘ - 1 CLICK ]", FOREGROUND_CYAN + FOREGROUND_INTENSITY)
@@ -625,6 +909,11 @@ def main():
         print_color("  5. Tối ưu CPU & tăng tốc phần mềm (tắt hiệu ứng, tối ưu TCP)", FOREGROUND_WHITE)
         print_color("  6. Tắt ứng dụng nền không cần thiết (OneDrive, Teams...)", FOREGROUND_WHITE)
         print_color("  7. TỰ ĐỘNG TỐI ƯU TẤT CẢ (1-Click)", FOREGROUND_GREEN + FOREGROUND_INTENSITY)
+        print_color("-" * 70, FOREGROUND_CYAN)
+        print_color("  8. Tối ưu mạng (flush DNS, TCP/IP, RSS, QoS, IPv6)", FOREGROUND_WHITE)
+        print_color("  9. Tối ưu SSD (TRIM, Prefetch, Defrag, NTFS)", FOREGROUND_WHITE)
+        print_color(" 10. Tắt/Bật Windows Update tạm thời", FOREGROUND_WHITE)
+        print_color("-" * 70, FOREGROUND_CYAN)
         print_color("  0. Thoát", FOREGROUND_RED + FOREGROUND_INTENSITY)
         print_color("-" * 70, FOREGROUND_CYAN)
         print_color("  Yêu cầu: Chạy bằng Administrator để tối ưu dịch vụ & services.", FOREGROUND_YELLOW)
@@ -652,6 +941,15 @@ def main():
             wait_input()
         elif choice == '7':
             auto_optimize_all()
+            wait_input()
+        elif choice == '8':
+            optimize_network()
+            wait_input()
+        elif choice == '9':
+            optimize_ssd()
+            wait_input()
+        elif choice == '10':
+            toggle_windows_update()
             wait_input()
         elif choice == '0':
             print_banner()

@@ -358,6 +358,232 @@ function Kill-BackgroundApps {
     Write-Host "======================================================================" -ForegroundColor Cyan
 }
 
+function Optimize-Network {
+    Draw-Header
+    Write-Host "  [ TOI UU MANG (NETWORK) ]" -ForegroundColor Cyan
+    Write-Host "----------------------------------------------------------------------" -ForegroundColor Cyan
+
+    # 1. Flush DNS
+    Write-Host "  [1] Dang xoa DNS cache..." -ForegroundColor White
+    try {
+        ipconfig /flushdns | Out-Null
+        Write-Host "  -> DNS cache da duoc xoa" -ForegroundColor Green
+    } catch {
+        Write-Host "  -> Loi xoa DNS cache" -ForegroundColor Red
+    }
+
+    # 2. TCP Registry
+    Write-Host "`n  [2] Dang toi uu TCP/IP stack..." -ForegroundColor White
+    $tcpParams = @{
+        "TcpNoDelay" = 1
+        "TcpAckFrequency" = 1
+        "TCPWindowSize" = 65535
+        "GlobalMaxTcpWindowSize" = 65535
+        "DefaultTTL" = 64
+        "EnablePMTUDiscovery" = 1
+        "SackOpts" = 1
+        "TcpMaxDupAcks" = 2
+        "DisableTaskOffload" = 0
+    }
+    try {
+        $key = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters"
+        if (!(Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
+        foreach ($p in $tcpParams.GetEnumerator()) {
+            New-ItemProperty -Path $key -Name $p.Key -Value $p.Value -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
+        }
+        Write-Host "  -> TCP/IP registry da toi uu" -ForegroundColor Green
+    } catch {
+        Write-Host "  -> Loi registry TCP: $($_.Exception.Message)" -ForegroundColor Red
+    }
+
+    # 3. Netsh global
+    Write-Host "`n  [3] Dang toi uu Netsh TCP/IP global..." -ForegroundColor White
+    try {
+        netsh interface tcp set global autotuninglevel=normal | Out-Null
+        netsh interface tcp set global rss=enabled | Out-Null
+        netsh interface tcp set global netdma=enabled | Out-Null
+        netsh interface tcp set global timestamps=disabled | Out-Null
+        netsh interface tcp set global ecncapability=disabled | Out-Null
+        netsh interface tcp set global chimney=disabled | Out-Null
+        Write-Host "  -> Netsh global da toi uu" -ForegroundColor Green
+    } catch {
+        Write-Host "  -> Loi netsh" -ForegroundColor Red
+    }
+
+    # 4. QoS / Throttling
+    Write-Host "`n  [4] Dang toi uu QoS & Throttling..." -ForegroundColor White
+    try {
+        $sysProfile = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
+        if (!(Test-Path $sysProfile)) { New-Item -Path $sysProfile -Force | Out-Null }
+        New-ItemProperty -Path $sysProfile -Name "SystemResponsiveness" -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
+
+        $psched = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched"
+        if (!(Test-Path $psched)) { New-Item -Path $psched -Force | Out-Null }
+        New-ItemProperty -Path $psched -Name "NonBestEffortLimit" -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
+        Write-Host "  -> QoS & Throttling da toi uu" -ForegroundColor Green
+    } catch {
+        Write-Host "  -> QoS: Mot so gia tri khong ap dung duoc" -ForegroundColor Yellow
+    }
+
+    # 5. Disable IPv6 optional
+    Write-Host "`n  [5] Tat IPv6 de giam overhead? (Nhap 'y' de tat, Enter de bo qua)" -ForegroundColor Yellow
+    $ans = Read-Host "  > "
+    if ($ans -eq 'y') {
+        try {
+            $ipv6Key = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters"
+            if (!(Test-Path $ipv6Key)) { New-Item -Path $ipv6Key -Force | Out-Null }
+            New-ItemProperty -Path $ipv6Key -Name "DisabledComponents" -Value 0xFF -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
+            Write-Host "  -> IPv6 da tat (can khoi dong lai)" -ForegroundColor Green
+        } catch {
+            Write-Host "  -> Loi tat IPv6" -ForegroundColor Red
+        }
+    }
+
+    Write-Host "`n  [TIP] Khuyen nghi khoi dong lai may de ap dung toi uu mang." -ForegroundColor Cyan
+    Write-Host "======================================================================" -ForegroundColor Cyan
+}
+
+function Optimize-SSD {
+    Draw-Header
+    Write-Host "  [ TOI UU SSD ]" -ForegroundColor Cyan
+    Write-Host "----------------------------------------------------------------------" -ForegroundColor Cyan
+
+    # Detect SSD
+    Write-Host "  Dang quet o dia..." -ForegroundColor White
+    $ssdFound = $false
+    try {
+        $disks = Get-CimInstance Win32_DiskDrive | Where-Object { $_.MediaType -match "SSD|Solid" }
+        if ($disks) {
+            foreach ($disk in $disks) {
+                $ssdFound = $true
+                Write-Host "  [SSD] $($disk.Model) ($([math]::Round($disk.Size/1GB,0)) GB)" -ForegroundColor Green
+            }
+        }
+    } catch {}
+    if (-not $ssdFound) {
+        Write-Host "  [CANH BAO] Khong phat hien SSD ro rang. Toi uu van se chay (co the khong co hieu qua tren HDD)." -ForegroundColor Yellow
+    }
+
+    # 1. TRIM
+    Write-Host "`n  [1] Kiem tra TRIM..." -ForegroundColor White
+    try {
+        $trim = fsutil behavior query DisableDeleteNotify 2>$null
+        if ($trim -match "DisableDeleteNotify = 0") {
+            Write-Host "  -> TRIM da BAT (OK)" -ForegroundColor Green
+        } else {
+            fsutil behavior set DisableDeleteNotify 0 | Out-Null
+            Write-Host "  -> TRIM da duoc BAT" -ForegroundColor Green
+        }
+    } catch {
+        Write-Host "  -> Loi TRIM" -ForegroundColor Red
+    }
+
+    # 2. Disable Last Access Timestamp
+    Write-Host "`n  [2] Tat Last Access Timestamp..." -ForegroundColor White
+    try {
+        fsutil behavior set DisableLastAccess 1 | Out-Null
+        Write-Host "  -> Last Access Timestamp: TAT" -ForegroundColor Green
+    } catch {
+        Write-Host "  -> Loi" -ForegroundColor Red
+    }
+
+    # 3. Disable Prefetch & Superfetch
+    Write-Host "`n  [3] Tat Prefetch & Superfetch..." -ForegroundColor White
+    try {
+        $pfKey = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters"
+        if (!(Test-Path $pfKey)) { New-Item -Path $pfKey -Force | Out-Null }
+        New-ItemProperty -Path $pfKey -Name "EnablePrefetcher" -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
+        New-ItemProperty -Path $pfKey -Name "EnableSuperfetch" -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
+        New-ItemProperty -Path $pfKey -Name "EnableBoottrace" -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
+        Write-Host "  -> Prefetch & Superfetch: TAT" -ForegroundColor Green
+    } catch {
+        Write-Host "  -> Loi registry" -ForegroundColor Red
+    }
+
+    # 4. Disable Scheduled Defrag
+    Write-Host "`n  [4] Tat Scheduled Defrag..." -ForegroundColor White
+    try {
+        schtasks /Change /TN "\Microsoft\Windows\Defrag\ScheduledDefrag" /DISABLE 2>$null | Out-Null
+        Write-Host "  -> Scheduled Defrag: TAT" -ForegroundColor Green
+    } catch {
+        Write-Host "  -> Scheduled Defrag khong tim thay hoac da tat" -ForegroundColor Yellow
+    }
+
+    # 5. Disable ClearPageFileAtShutdown
+    Write-Host "`n  [5] Tat ClearPageFileAtShutdown..." -ForegroundColor White
+    try {
+        $mmKey = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"
+        New-ItemProperty -Path $mmKey -Name "ClearPageFileAtShutdown" -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
+        Write-Host "  -> ClearPageFileAtShutdown: TAT" -ForegroundColor Green
+    } catch {
+        Write-Host "  -> Khong the set ClearPageFileAtShutdown" -ForegroundColor Yellow
+    }
+
+    # 6. NTFS Memory Usage
+    Write-Host "`n  [6] Tang NTFS Memory Usage..." -ForegroundColor White
+    try {
+        $fsKey = "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem"
+        New-ItemProperty -Path $fsKey -Name "NtfsMemoryUsage" -Value 2 -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
+        Write-Host "  -> NTFS MemoryUsage: 2 (High)" -ForegroundColor Green
+    } catch {
+        Write-Host "  -> Khong the set NtfsMemoryUsage" -ForegroundColor Yellow
+    }
+
+    Write-Host "`n  [TIP] Khuyen nghi khoi dong lai de ap dung tat ca toi uu SSD." -ForegroundColor Cyan
+    Write-Host "======================================================================" -ForegroundColor Cyan
+}
+
+function Toggle-WindowsUpdate {
+    Draw-Header
+    Write-Host "  [ QUAN LY WINDOWS UPDATE ]" -ForegroundColor Cyan
+    Write-Host "----------------------------------------------------------------------" -ForegroundColor Cyan
+    Write-Host "  1. TAT Windows Update tam thoi" -ForegroundColor Red
+    Write-Host "  2. BAT lai Windows Update" -ForegroundColor Green
+    Write-Host "  0. Quay lai" -ForegroundColor White
+    Write-Host "----------------------------------------------------------------------" -ForegroundColor Cyan
+
+    $choice = Read-Host "  Nhap lua chon"
+    switch ($choice) {
+        '1' {
+            Write-Host "`n  Dang TAT Windows Update..." -ForegroundColor Yellow
+            $services = @("wuauserv", "bits", "dosvc", "usosvc", "WaaSMedicSvc")
+            foreach ($svc in $services) {
+                try {
+                    Stop-Service -Name $svc -Force -ErrorAction SilentlyContinue
+                    Set-Service -Name $svc -StartupType Disabled -ErrorAction SilentlyContinue
+                    Write-Host "  [OK] $svc : TAT" -ForegroundColor Green
+                } catch {
+                    Write-Host "  [WARN] $svc : Khong the tat" -ForegroundColor Yellow
+                }
+            }
+            # Registry fallback for WaaSMedicSvc
+            try {
+                New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\WaaSMedicSvc" -Name "Start" -Value 4 -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
+            } catch {}
+            Write-Host "`n  [+] Windows Update da TAT tam thoi." -ForegroundColor Green
+            Write-Host "  [TIP] Chon '2' trong menu nay de BAT lai khi can." -ForegroundColor Cyan
+        }
+        '2' {
+            Write-Host "`n  Dang BAT Windows Update..." -ForegroundColor Green
+            $services = @("wuauserv", "bits", "dosvc", "usosvc")
+            foreach ($svc in $services) {
+                try {
+                    Set-Service -Name $svc -StartupType Manual -ErrorAction SilentlyContinue
+                    Start-Service -Name $svc -ErrorAction SilentlyContinue
+                    Write-Host "  [OK] $svc : BAT" -ForegroundColor Green
+                } catch {
+                    Write-Host "  [WARN] $svc : Khong the bat" -ForegroundColor Yellow
+                }
+            }
+            try {
+                New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\WaaSMedicSvc" -Name "Start" -Value 3 -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
+            } catch {}
+            Write-Host "`n  [+] Windows Update da BAT lai." -ForegroundColor Green
+        }
+    }
+    Write-Host "======================================================================" -ForegroundColor Cyan
+}
+
 function Auto-OptimizeAll {
     Draw-Header
     Write-Host "  [ TU DONG TOI UU TOAN BO - 1 CLICK ]" -ForegroundColor Cyan
@@ -400,6 +626,11 @@ while ($true) {
     Write-Host "  5. Toi uu CPU & tang toc phan mem (tat hieu ung, toi uu TCP)" -ForegroundColor White
     Write-Host "  6. Tat ung dung nen khong can thiet (OneDrive, Teams...)" -ForegroundColor White
     Write-Host "  7. TU DONG TOI UU TAT CA (1-Click)" -ForegroundColor Green
+    Write-Host "----------------------------------------------------------------------" -ForegroundColor Cyan
+    Write-Host "  8. Toi uu mang (flush DNS, TCP/IP, RSS, QoS, IPv6)" -ForegroundColor White
+    Write-Host "  9. Toi uu SSD (TRIM, Prefetch, Defrag, NTFS)" -ForegroundColor White
+    Write-Host " 10. Tat/Bat Windows Update tam thoi" -ForegroundColor White
+    Write-Host "----------------------------------------------------------------------" -ForegroundColor Cyan
     Write-Host "  0. Thoat" -ForegroundColor Red
     Write-Host "----------------------------------------------------------------------" -ForegroundColor Cyan
     Write-Host "  Yeu cau: Chay bang Administrator de toi uu dich vu & services." -ForegroundColor Yellow
@@ -414,6 +645,9 @@ while ($true) {
         '5' { Optimize-Performance; Read-Host "`n  Nhan Enter de quay lai menu..." }
         '6' { Kill-BackgroundApps; Read-Host "`n  Nhan Enter de quay lai menu..." }
         '7' { Auto-OptimizeAll }
+        '8' { Optimize-Network; Read-Host "`n  Nhan Enter de quay lai menu..." }
+        '9' { Optimize-SSD; Read-Host "`n  Nhan Enter de quay lai menu..." }
+        '10' { Toggle-WindowsUpdate; Read-Host "`n  Nhan Enter de quay lai menu..." }
         '0' {
             Draw-Header
             Write-Host "  Cam on da su dung Windows System Optimizer!" -ForegroundColor Green

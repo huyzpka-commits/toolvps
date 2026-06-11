@@ -26,6 +26,9 @@ Tool tối ưu hóa hệ thống Windows dành cho **PC, Laptop, VPS cấu hình
 | **5. Tối ưu CPU & hiệu năng** | Tắt visual effects, transparency, animations. Tối ưu TCP/IP |
 | **6. Tắt ứng dụng nền** | OneDrive, Teams, Skype, Spotify, Steam, Epic Games... |
 | **7. Tự động tất cả** | 1-Click chạy toàn bộ tối ưu tự động |
+| **8. Tối ưu mạng** | Flush DNS, TCP/IP, RSS, Auto-Tuning, QoS, tùy chọn tắt IPv6 |
+| **9. Tối ưu SSD** | TRIM, tắt Prefetch/Superfetch, Scheduled Defrag, NTFS cache |
+| **10. Tắt/Bật Windows Update** | Tạm thời tắt hoặc bật lại Windows Update và dịch vụ liên quan |
 
 ---
 
@@ -48,7 +51,7 @@ Tool tối ưu hóa hệ thống Windows dành cho **PC, Laptop, VPS cấu hình
 
    Hoặc click đúp `Run-Optimizer.bat` — tool sẽ tự chạy.
 
-3. **Chọn chức năng** bằng bàn phím (1-7).
+3. **Chọn chức năng** bằng bàn phím (1-10).
 
 ### Cách 2: Build file `.exe` (Python cần thiết)
 
