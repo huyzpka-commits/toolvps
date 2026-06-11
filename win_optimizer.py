@@ -868,6 +868,59 @@ def toggle_windows_update():
     print_color("=" * 70, FOREGROUND_CYAN)
 
 
+def toggle_context_menu():
+    print_banner()
+    print_color("  [ CHUYEN DOI MENU CHUOT PHAI (Windows 11) ]", FOREGROUND_CYAN + FOREGROUND_INTENSITY)
+    print_color("-" * 70, FOREGROUND_CYAN)
+    print_color("  1. Menu CLASSIC (Windows 10 style - show full menu always)", FOREGROUND_GREEN)
+    print_color("  2. Menu MODERN (Windows 11 style - 'Show more options')", FOREGROUND_WHITE)
+    print_color("  0. Quay lai", FOREGROUND_WHITE)
+    print_color("-" * 70, FOREGROUND_CYAN)
+    
+    choice = input("  Nhap lua chon: ").strip()
+    
+    clsid_key = r"Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}"
+    
+    if choice == '1':
+        print_color("\n  Dang bat Menu CLASSIC...", FOREGROUND_YELLOW)
+        try:
+            # Create the key path
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, clsid_key + r"\InprocServer32")
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "")
+            winreg.CloseKey(key)
+            print_color("  -> Menu CLASSIC da duoc BAT", FOREGROUND_GREEN)
+            print_color("  [TIP] Nhap chuot phai voi nut chuot phai bat ky de test.", FOREGROUND_CYAN)
+            print_color("  [TIP] Khoi dong lai Explorer hoac khoi dong lai may de ap dung.", FOREGROUND_CYAN)
+        except Exception as e:
+            print_color(f"  -> Loi: {str(e)[:50]}", FOREGROUND_RED)
+    
+    elif choice == '2':
+        print_color("\n  Dang khoi phuc Menu MODERN...", FOREGROUND_YELLOW)
+        try:
+            # Delete the entire CLSID key
+            import _winreg
+            # Need to recursively delete
+            def delete_sub_key(root, sub):
+                try:
+                    open_key = winreg.OpenKey(root, sub, 0, winreg.KEY_ALL_ACCESS)
+                    info = winreg.QueryInfoKey(open_key)
+                    for x in range(0, info[0]):
+                        child = winreg.EnumKey(open_key, 0)
+                        delete_sub_key(open_key, child)
+                        winreg.DeleteKey(open_key, child)
+                    winreg.CloseKey(open_key)
+                    winreg.DeleteKey(root, sub)
+                except Exception:
+                    pass
+            delete_sub_key(winreg.HKEY_CURRENT_USER, clsid_key)
+            print_color("  -> Menu MODERN da duoc khoi phuc", FOREGROUND_GREEN)
+            print_color("  [TIP] Khoi dong lai Explorer hoac khoi dong lai may de ap dung.", FOREGROUND_CYAN)
+        except Exception as e:
+            print_color(f"  -> Loi: {str(e)[:50]}", FOREGROUND_RED)
+    
+    print_color("=" * 70, FOREGROUND_CYAN)
+
+
 def auto_optimize_all():
     print_banner()
     print_color("  [ TỰ ĐỘNG TỐI ƯU TOÀN BỘ - 1 CLICK ]", FOREGROUND_CYAN + FOREGROUND_INTENSITY)
@@ -913,6 +966,7 @@ def main():
         print_color("  8. Tối ưu mạng (flush DNS, TCP/IP, RSS, QoS, IPv6)", FOREGROUND_WHITE)
         print_color("  9. Tối ưu SSD (TRIM, Prefetch, Defrag, NTFS)", FOREGROUND_WHITE)
         print_color(" 10. Tắt/Bật Windows Update tạm thời", FOREGROUND_WHITE)
+        print_color(" 11. Chuyển menu chuột phải Classic/Modern (Windows 11)", FOREGROUND_WHITE)
         print_color("-" * 70, FOREGROUND_CYAN)
         print_color("  0. Thoát", FOREGROUND_RED + FOREGROUND_INTENSITY)
         print_color("-" * 70, FOREGROUND_CYAN)
@@ -950,6 +1004,9 @@ def main():
             wait_input()
         elif choice == '10':
             toggle_windows_update()
+            wait_input()
+        elif choice == '11':
+            toggle_context_menu()
             wait_input()
         elif choice == '0':
             print_banner()

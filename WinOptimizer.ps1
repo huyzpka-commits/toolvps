@@ -614,6 +614,45 @@ function Auto-OptimizeAll {
     Write-Host "======================================================================" -ForegroundColor Cyan
 }
 
+function Toggle-ContextMenu {
+    Draw-Header
+    Write-Host "  [ CHUYEN DOI MENU CHUOT PHAI (Windows 11) ]" -ForegroundColor Cyan
+    Write-Host "----------------------------------------------------------------------" -ForegroundColor Cyan
+    Write-Host "  1. Menu CLASSIC (Windows 10 style - show full menu always)" -ForegroundColor Green
+    Write-Host "  2. Menu MODERN (Windows 11 style - 'Show more options')" -ForegroundColor White
+    Write-Host "  0. Quay lai" -ForegroundColor White
+    Write-Host "----------------------------------------------------------------------" -ForegroundColor Cyan
+
+    $choice = Read-Host "  Nhap lua chon"
+    $clsidKey = "HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"
+
+    switch ($choice) {
+        '1' {
+            Write-Host "`n  Dang bat Menu CLASSIC..." -ForegroundColor Yellow
+            try {
+                New-Item -Path $clsidKey -Force -ErrorAction SilentlyContinue | Out-Null
+                New-ItemProperty -Path $clsidKey -Name "(Default)" -Value "" -PropertyType String -Force -ErrorAction SilentlyContinue | Out-Null
+                Write-Host "  -> Menu CLASSIC da duoc BAT" -ForegroundColor Green
+                Write-Host "  [TIP] Nhap chuot phai bat ky de test." -ForegroundColor Cyan
+                Write-Host "  [TIP] Khoi dong lai Explorer hoac khoi dong lai may de ap dung." -ForegroundColor Cyan
+            } catch {
+                Write-Host "  -> Loi: $($_.Exception.Message)" -ForegroundColor Red
+            }
+        }
+        '2' {
+            Write-Host "`n  Dang khoi phuc Menu MODERN..." -ForegroundColor Yellow
+            try {
+                Remove-Item -Path "HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}" -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "  -> Menu MODERN da duoc khoi phuc" -ForegroundColor Green
+                Write-Host "  [TIP] Khoi dong lai Explorer hoac khoi dong lai may de ap dung." -ForegroundColor Cyan
+            } catch {
+                Write-Host "  -> Loi: $($_.Exception.Message)" -ForegroundColor Red
+            }
+        }
+    }
+    Write-Host "======================================================================" -ForegroundColor Cyan
+}
+
 # MAIN MENU
 while ($true) {
     Draw-Header
@@ -630,6 +669,7 @@ while ($true) {
     Write-Host "  8. Toi uu mang (flush DNS, TCP/IP, RSS, QoS, IPv6)" -ForegroundColor White
     Write-Host "  9. Toi uu SSD (TRIM, Prefetch, Defrag, NTFS)" -ForegroundColor White
     Write-Host " 10. Tat/Bat Windows Update tam thoi" -ForegroundColor White
+    Write-Host " 11. Chuyen menu chuot phai Classic/Modern (Windows 11)" -ForegroundColor White
     Write-Host "----------------------------------------------------------------------" -ForegroundColor Cyan
     Write-Host "  0. Thoat" -ForegroundColor Red
     Write-Host "----------------------------------------------------------------------" -ForegroundColor Cyan
@@ -648,6 +688,7 @@ while ($true) {
         '8' { Optimize-Network; Read-Host "`n  Nhan Enter de quay lai menu..." }
         '9' { Optimize-SSD; Read-Host "`n  Nhan Enter de quay lai menu..." }
         '10' { Toggle-WindowsUpdate; Read-Host "`n  Nhan Enter de quay lai menu..." }
+        '11' { Toggle-ContextMenu; Read-Host "`n  Nhan Enter de quay lai menu..." }
         '0' {
             Draw-Header
             Write-Host "  Cam on da su dung Windows System Optimizer!" -ForegroundColor Green

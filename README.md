@@ -29,6 +29,7 @@ Tool tối ưu hóa hệ thống Windows dành cho **PC, Laptop, VPS cấu hình
 | **8. Tối ưu mạng** | Flush DNS, TCP/IP, RSS, Auto-Tuning, QoS, tùy chọn tắt IPv6 |
 | **9. Tối ưu SSD** | TRIM, tắt Prefetch/Superfetch, Scheduled Defrag, NTFS cache |
 | **10. Tắt/Bật Windows Update** | Tạm thời tắt hoặc bật lại Windows Update và dịch vụ liên quan |
+| **11. Chuyển menu chuột phải** | Đổi menu chuột phải Windows 11 về Classic (Windows 10) hoặc Modern |
 
 ---
 
@@ -51,7 +52,7 @@ Tool tối ưu hóa hệ thống Windows dành cho **PC, Laptop, VPS cấu hình
 
    Hoặc click đúp `Run-Optimizer.bat` — tool sẽ tự chạy.
 
-3. **Chọn chức năng** bằng bàn phím (1-10).
+3. **Chọn chức năng** bằng bàn phím (1-11).
 
 ### Cách 2: Build file `.exe` (Python cần thiết)
 
