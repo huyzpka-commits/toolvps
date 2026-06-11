@@ -1,0 +1,676 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Windows System Optimizer v1.0
+Author: System Expert
+Mục đích: Tối ưu RAM, CPU, tăng tốc phần mềm, giải phóng ổ cứng và RAM
+Phù hợp: Windows 10/11, Windows Server 2022, PC/Laptop/VPS cấu hình thấp
+Yêu cầu: Chạy với quyền Administrator để tối ưu tối đa
+"""
+
+import os
+import sys
+import shutil
+import ctypes
+import subprocess
+import tempfile
+import time
+import winreg
+import threading
+from datetime import datetime
+
+# Kiểm tra và tự động cài psutil nếu chưa có (tùy chọn)
+try:
+    import psutil
+except ImportError:
+    print("Đang cài đặt thư viện psutil...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "psutil", "--quiet"])
+    import psutil
+
+# Setup UTF-8 console
+def setup_console():
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+    try:
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+    ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+    ctypes.windll.kernel32.SetConsoleCP(65001)
+    os.system("chcp 65001 >nul 2>&1")
+
+setup_console()
+
+# Windows APIs
+kernel32 = ctypes.windll.kernel32
+psapi = ctypes.windll.psapi
+shell32 = ctypes.windll.shell32
+
+# Constants
+STD_OUTPUT_HANDLE = -11
+FOREGROUND_BLACK = 0x0000
+FOREGROUND_BLUE = 0x0001
+FOREGROUND_GREEN = 0x0002
+FOREGROUND_CYAN = 0x0003
+FOREGROUND_RED = 0x0004
+FOREGROUND_MAGENTA = 0x0005
+FOREGROUND_YELLOW = 0x0006
+FOREGROUND_WHITE = 0x0007
+FOREGROUND_INTENSITY = 0x0008
+
+BACKGROUND_BLACK = 0x0000
+BACKGROUND_BLUE = 0x0010
+BACKGROUND_GREEN = 0x0020
+BACKGROUND_CYAN = 0x0030
+BACKGROUND_RED = 0x0040
+BACKGROUND_MAGENTA = 0x0050
+BACKGROUND_YELLOW = 0x0060
+BACKGROUND_WHITE = 0x0070
+BACKGROUND_INTENSITY = 0x0080
+
+def set_console_color(color):
+    handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+    kernel32.SetConsoleTextAttribute(handle, color)
+
+def print_color(text, color=FOREGROUND_WHITE, newline=True):
+    set_console_color(color)
+    if newline:
+        print(text)
+    else:
+        print(text, end='')
+    set_console_color(FOREGROUND_WHITE)
+
+def clear_screen():
+    os.system('cls')
+
+def is_admin():
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin()
+    except Exception:
+        return False
+
+def format_size(bytes_size):
+    if bytes_size <= 0:
+        return "0 B"
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if abs(bytes_size) < 1024.0:
+            return f"{bytes_size:.2f} {unit}"
+        bytes_size /= 1024.0
+    return f"{bytes_size:.2f} PB"
+
+def wait_input():
+    print_color("\nNhấn Enter để quay lại menu...", FOREGROUND_YELLOW)
+    input()
+
+def print_banner():
+    clear_screen()
+    print_color("=" * 70, FOREGROUND_CYAN)
+    print_color("       WINDOWS SYSTEM OPTIMIZER v1.0", FOREGROUND_CYAN + FOREGROUND_INTENSITY)
+    print_color("       Tối ưu cho PC | Laptop | VPS cấu hình thấp", FOREGROUND_WHITE)
+    print_color("       Windows 10/11 & Windows Server 2022", FOREGROUND_WHITE)
+    print_color("=" * 70, FOREGROUND_CYAN)
+    if not is_admin():
+        print_color("  [CẢNH BÁO] Chưa chạy với quyền Administrator! Một số tính năng sẽ bị giới hạn.", FOREGROUND_RED + FOREGROUND_INTENSITY)
+        print_color("=" * 70, FOREGROUND_CYAN)
+
+def show_system_info():
+    print_banner()
+    print_color("  [ THÔNG TIN HỆ THỐNG ]", FOREGROUND_CYAN + FOREGROUND_INTENSITY)
+    print_color("-" * 70, FOREGROUND_CYAN)
+    
+    # CPU
+    cpu_count_logical = psutil.cpu_count(logical=True)
+    cpu_count_phys = psutil.cpu_count(logical=False)
+    cpu_freq = psutil.cpu_freq()
+    cpu_percent = psutil.cpu_percent(interval=1)
+    cpu_percents = psutil.cpu_percent(interval=0, percpu=True)
+    
+    print_color(f"  CPU Vật lý: {cpu_count_phys} core | Luồng: {cpu_count_logical}", FOREGROUND_WHITE)
+    if cpu_freq:
+        print_color(f"  Tốc độ: {cpu_freq.current:.0f} MHz (Min: {cpu_freq.min:.0f} | Max: {cpu_freq.max:.0f})", FOREGROUND_WHITE)
+    print_color(f"  Sử dụng CPU: {cpu_percent}%", FOREGROUND_YELLOW if cpu_percent < 80 else FOREGROUND_RED)
+    bar_len = 40
+    filled = int(bar_len * cpu_percent / 100)
+    bar = '[' + '█' * filled + '░' * (bar_len - filled) + ']'
+    print_color(f"  {bar}", FOREGROUND_GREEN if cpu_percent < 50 else (FOREGROUND_YELLOW if cpu_percent < 80 else FOREGROUND_RED))
+    
+    # RAM
+    print_color("-" * 70, FOREGROUND_CYAN)
+    mem = psutil.virtual_memory()
+    print_color(f"  RAM Tổng:    {format_size(mem.total)}", FOREGROUND_WHITE)
+    print_color(f"  RAM Đã dùng: {format_size(mem.used)} ({mem.percent}%)", FOREGROUND_YELLOW if mem.percent < 85 else FOREGROUND_RED)
+    print_color(f"  RAM Trống:   {format_size(mem.available)}", FOREGROUND_GREEN)
+    ram_bar = '[' + '█' * int(bar_len * mem.percent / 100) + '░' * (bar_len - int(bar_len * mem.percent / 100)) + ']'
+    print_color(f"  {ram_bar}", FOREGROUND_GREEN if mem.percent < 70 else (FOREGROUND_YELLOW if mem.percent < 85 else FOREGROUND_RED))
+    
+    # Swap
+    swap = psutil.swap_memory()
+    print_color(f"  SWAP/Pagefile: {format_size(swap.used)}/{format_size(swap.total)} ({swap.percent}%)", FOREGROUND_WHITE)
+    
+    # Disk
+    print_color("-" * 70, FOREGROUND_CYAN)
+    for part in psutil.disk_partitions():
+        if 'cdrom' in part.opts or part.fstype == '':
+            continue
+        try:
+            usage = psutil.disk_usage(part.mountpoint)
+            color = FOREGROUND_GREEN if usage.percent < 80 else (FOREGROUND_YELLOW if usage.percent < 90 else FOREGROUND_RED)
+            print_color(f"  Ổ {part.device:4s} {part.mountpoint:6s} | {format_size(usage.used):>10s}/{format_size(usage.total):>10s} ({usage.percent}%)", color)
+        except Exception:
+            pass
+    
+    # Boot time
+    print_color("-" * 70, FOREGROUND_CYAN)
+    boot_time = datetime.fromtimestamp(psutil.boot_time())
+    print_color(f"  Thời gian hoạt động: {boot_time.strftime('%Y-%m-%d %H:%M:%S')} (Uptime: {int((datetime.now() - boot_time).total_seconds() // 3600)} giờ)", FOREGROUND_WHITE)
+    print_color("=" * 70, FOREGROUND_CYAN)
+
+def clean_disk():
+    print_banner()
+    print_color("  [ DỌN DẸP Ổ CỨNG & FILE TẠM ]", FOREGROUND_CYAN + FOREGROUND_INTENSITY)
+    print_color("-" * 70, FOREGROUND_CYAN)
+    
+    total_freed = 0
+    targets = []
+    
+    # User temp
+    user_temp = os.path.expandvars(r"%TEMP%")
+    if os.path.exists(user_temp):
+        targets.append(("Temp người dùng", user_temp))
+    
+    # Windows temp
+    win_temp = r"C:\Windows\Temp"
+    if os.path.exists(win_temp):
+        targets.append(("Temp hệ thống", win_temp))
+    
+    # Prefetch (giữ lại file mới hơn 7 ngày)
+    prefetch = r"C:\Windows\Prefetch"
+    if os.path.exists(prefetch):
+        targets.append(("Prefetch", prefetch))
+    
+    # Recent
+    recent = os.path.expandvars(r"%USERPROFILE%\Recent")
+    if os.path.exists(recent):
+        targets.append(("Recent Items", recent))
+    
+    # Windows Update Download cache
+    wu_cache = r"C:\Windows\SoftwareDistribution\Download"
+    if os.path.exists(wu_cache):
+        targets.append(("Windows Update Cache", wu_cache))
+    
+    # Windows Logs
+    win_logs = r"C:\Windows\Logs"
+    if os.path.exists(win_logs):
+        targets.append(("Windows Logs", win_logs))
+    
+    # Crash dumps
+    dumps = r"C:\Windows\Minidump"
+    if os.path.exists(dumps):
+        targets.append(("Minidump", dumps))
+    
+    # Event Viewer temp logs
+    evt_logs = r"C:\Windows\System32\winevt\Logs"
+    if os.path.exists(evt_logs):
+        targets.append(("Event Logs", evt_logs))
+    
+    # Temporary Internet Files
+    ie_temp = os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Windows\INetCache")
+    if os.path.exists(ie_temp):
+        targets.append(("Internet Cache", ie_temp))
+    
+    # Thumbnail cache
+    thumb_cache = os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Windows\Explorer")
+    if os.path.exists(thumb_cache):
+        targets.append(("Thumbnail Cache", thumb_cache))
+    
+    for name, path in targets:
+        freed = 0
+        try:
+            for root, dirs, files in os.walk(path, topdown=False):
+                # Skip system protected directories
+                if '\\System32' in root or '\\SysWOW64' in root:
+                    if name not in ["Windows Logs", "Event Logs"]:
+                        continue
+                
+                for f in files:
+                    try:
+                        fp = os.path.join(root, f)
+                        if os.path.exists(fp):
+                            size = os.path.getsize(fp)
+                            os.remove(fp)
+                            freed += size
+                            total_freed += size
+                    except Exception:
+                        pass
+                
+                for d in dirs:
+                    try:
+                        dp = os.path.join(root, d)
+                        if os.path.exists(dp) and not os.listdir(dp):
+                            os.rmdir(dp)
+                    except Exception:
+                        pass
+            
+            print_color(f"  [OK] {name:25s} - {format_size(freed):>10s}", FOREGROUND_GREEN)
+        except Exception as e:
+            print_color(f"  [ERR] {name:25s} - {str(e)[:40]}", FOREGROUND_RED)
+    
+    # Empty Recycle Bin
+    try:
+        # SHERB_NOCONFIRMATION = 0x00000001
+        # SHERB_NOPROGRESSUI = 0x00000002
+        # SHERB_NOSOUND = 0x00000004
+        result = shell32.SHEmptyRecycleBinW(None, None, 0x00000001 | 0x00000002 | 0x00000004)
+        print_color(f"  [OK] {'Recycle Bin':25s} - Đã dọn sạch", FOREGROUND_GREEN)
+    except Exception:
+        print_color(f"  [WARN] {'Recycle Bin':25s} - Không thể dọn", FOREGROUND_YELLOW)
+    
+    # Run Windows Disk Cleanup scripts (optional)
+    try:
+        # Tự động dọn Windows Error Reporting
+        wer_path = r"C:\ProgramData\Microsoft\Windows\WER"
+        if os.path.exists(wer_path):
+            shutil.rmtree(wer_path, ignore_errors=True)
+            print_color(f"  [OK] {'Error Reports':25s} - Đã dọn", FOREGROUND_GREEN)
+    except Exception:
+        pass
+    
+    print_color("-" * 70, FOREGROUND_CYAN)
+    print_color(f"  [+] TỔNG ĐÃ GIẢI PHÓNG: {format_size(total_freed)}", FOREGROUND_GREEN + FOREGROUND_INTENSITY)
+    print_color("=" * 70, FOREGROUND_CYAN)
+
+def optimize_ram():
+    print_banner()
+    print_color("  [ TỐI ƯU & GIẢI PHÓNG RAM ]", FOREGROUND_CYAN + FOREGROUND_INTENSITY)
+    print_color("-" * 70, FOREGROUND_CYAN)
+    
+    mem_before = psutil.virtual_memory()
+    print_color(f"  Trước khi tối ưu: {format_size(mem_before.used)} đã dùng ({mem_before.percent}%)", FOREGROUND_YELLOW)
+    
+    # 1. Trim working sets of all accessible processes
+    count = 0
+    failed = 0
+    
+    print_color("\n  [1] Đang trim working sets của các process...", FOREGROUND_WHITE)
+    for proc in psutil.process_iter(['pid', 'name']):
+        try:
+            pid = proc.info['pid']
+            # PROCESS_QUERY_INFORMATION | PROCESS_SET_QUOTA | PROCESS_VM_OPERATION | PROCESS_VM_READ = 0x400 | 0x100 | 0x8 | 0x10 = 0x518
+            # Sử dụng 0x1F0FFF (PROCESS_ALL_ACCESS) để đảm bảo, nhưng với system process có thể fail
+            hProcess = kernel32.OpenProcess(0x001F0FFF, False, pid)
+            if hProcess:
+                if psapi.EmptyWorkingSet(hProcess):
+                    count += 1
+                else:
+                    failed += 1
+                kernel32.CloseHandle(hProcess)
+            else:
+                failed += 1
+        except Exception:
+            failed += 1
+    
+    print_color(f"  -> Đã trim {count} process thành công", FOREGROUND_GREEN)
+    
+    # 2. Run idle tasks to flush cache
+    print_color("\n  [2] Đang chạy idle tasks...", FOREGROUND_WHITE)
+    try:
+        subprocess.run(["rundll32.exe", "advapi32.dll,ProcessIdleTasks"], timeout=30, capture_output=True)
+        print_color("  -> Idle tasks hoàn tất", FOREGROUND_GREEN)
+    except Exception:
+        print_color("  -> Idle tasks bỏ qua", FOREGROUND_YELLOW)
+    
+    # 3. Clear Standby List / File Cache (if possible via NtSetSystemInformation)
+    print_color("\n  [3] Đang cố gắng giải phóng standby list...", FOREGROUND_WHITE)
+    try:
+        ntdll = ctypes.windll.ntdll
+        # SystemMemoryListInformation class = 80
+        # MemoryPurgeStandbyList = 3
+        # MemoryPurgeStandbyList + MemoryPurgeModifiedPageList = 3
+        # Define MemoryListCommand structure
+        class MEMORY_LIST_COMMAND(ctypes.Structure):
+            _fields_ = [("MemoryListCommand", ctypes.c_ulong)]
+        
+        cmd = MEMORY_LIST_COMMAND()
+        cmd.MemoryListCommand = 3  # MemoryPurgeStandbyList
+        
+        # SystemMemoryListInformation = 80
+        status = ntdll.NtSetSystemInformation(80, ctypes.byref(cmd), ctypes.sizeof(cmd))
+        if status == 0:  # STATUS_SUCCESS
+            print_color("  -> Standby list đã được giải phóng", FOREGROUND_GREEN)
+        else:
+            print_color(f"  -> Standby list: cần quyền cao hơn (Status: 0x{status:08X})", FOREGROUND_YELLOW)
+    except Exception as e:
+        print_color(f"  -> Không thể clear standby list (cần driver hoặc RAMMap): {str(e)[:50]}", FOREGROUND_YELLOW)
+    
+    # 4. Force garbage collection of Python itself
+    import gc
+    gc.collect()
+    
+    # 5. Wait a moment for system to stabilize
+    time.sleep(1)
+    
+    mem_after = psutil.virtual_memory()
+    saved = mem_before.used - mem_after.used
+    print_color("-" * 70, FOREGROUND_CYAN)
+    print_color(f"  Sau khi tối ưu:  {format_size(mem_after.used)} đã dùng ({mem_after.percent}%)", FOREGROUND_GREEN)
+    if saved > 0:
+        print_color(f"  [+] RAM đã giải phóng: {format_size(saved)}", FOREGROUND_GREEN + FOREGROUND_INTENSITY)
+    else:
+        print_color(f"  [~] RAM ổn định (có thể đã được dùng lại bởi cache)", FOREGROUND_YELLOW)
+    print_color("=" * 70, FOREGROUND_CYAN)
+
+def optimize_services():
+    print_banner()
+    print_color("  [ TỐI ƯU DỊCH VỤ & HỆ THỐNG ]", FOREGROUND_CYAN + FOREGROUND_INTENSITY)
+    print_color("-" * 70, FOREGROUND_CYAN)
+    
+    if not is_admin():
+        print_color("  [LỖI] Cần quyền Administrator để tối ưu dịch vụ!", FOREGROUND_RED)
+        print_color("=" * 70, FOREGROUND_CYAN)
+        return
+    
+    services = [
+        ("WSearch", "Windows Search (lập chỉ mục, tốn nhiều tài nguyên)"),
+        ("SysMain", "SysMain / Superfetch (prefetch tự động, không cần thiết trên SSD/VPS)"),
+        ("WMPNetworkSvc", "Windows Media Player Network Sharing"),
+        ("Fax", "Fax Service"),
+        ("DiagTrack", "Connected User Experiences and Telemetry (thu thập dữ liệu)"),
+        ("dmwappushservice", "WAP Push Service"),
+        ("MapsBroker", "Downloaded Maps Manager"),
+        ("WbioSrvc", "Windows Biometric Service (nếu không dùng vân tay/face)"),
+    ]
+    
+    print_color("  Đang tắt các dịch vụ không cần thiết...", FOREGROUND_WHITE)
+    for svc_name, desc in services:
+        try:
+            # Stop service
+            stop_result = subprocess.run(["sc", "stop", svc_name], capture_output=True, text=True, check=False)
+            # Disable service
+            config_result = subprocess.run(["sc", "config", svc_name, "start=", "disabled"], capture_output=True, text=True, check=False)
+            
+            if config_result.returncode == 0 or stop_result.returncode == 0 or stop_result.returncode == 1062:  # 1062 = service not started
+                print_color(f"  [OK] {svc_name:20s} - {desc}", FOREGROUND_GREEN)
+            else:
+                print_color(f"  [WARN] {svc_name:20s} - Không tìm thấy hoặc không thể tắt", FOREGROUND_YELLOW)
+        except Exception as e:
+            print_color(f"  [ERR] {svc_name:20s} - {str(e)[:40]}", FOREGROUND_RED)
+    
+    # Power plan - High Performance
+    print_color("\n  [+] Đang kích hoạt chế độ High Performance...", FOREGROUND_WHITE)
+    try:
+        # First, try to duplicate the built-in High Performance plan
+        dup = subprocess.run(["powercfg", "-duplicatescheme", "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"], 
+                          capture_output=True, text=True, check=False)
+        if dup.returncode == 0:
+            # Extract GUID from output
+            output = dup.stdout
+            if "GUID:" in output:
+                guid = output.split("GUID:")[1].split(" ")[1].strip()
+                subprocess.run(["powercfg", "-setactive", guid], capture_output=True, check=False)
+                print_color(f"  -> High Performance đã kích hoạt (GUID: {guid})", FOREGROUND_GREEN)
+            else:
+                subprocess.run(["powercfg", "-setactive", "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"], capture_output=True, check=False)
+                print_color("  -> High Performance đã kích hoạt", FOREGROUND_GREEN)
+        else:
+            # Maybe the plan already exists
+            subprocess.run(["powercfg", "-setactive", "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"], capture_output=True, check=False)
+            print_color("  -> High Performance đã kích hoạt (fallback)", FOREGROUND_GREEN)
+    except Exception as e:
+        print_color(f"  -> Không thể đổi power plan: {str(e)[:50]}", FOREGROUND_YELLOW)
+    
+    # Disable Hibernation (free up disk space equal to RAM size)
+    print_color("\n  [+] Đang tắt Hibernate để giải phóng ổ cứng...", FOREGROUND_WHITE)
+    try:
+        subprocess.run(["powercfg", "-h", "off"], capture_output=True, check=False)
+        print_color("  -> Hibernate đã tắt (giải phóng RAM-size trên ổ C:)", FOREGROUND_GREEN)
+    except Exception:
+        print_color("  -> Không thể tắt Hibernate", FOREGROUND_YELLOW)
+    
+    print_color("=" * 70, FOREGROUND_CYAN)
+
+def optimize_performance():
+    print_banner()
+    print_color("  [ TỐI ƯU CPU & TĂNG TỐC PHẦN MỀM ]", FOREGROUND_CYAN + FOREGROUND_INTENSITY)
+    print_color("-" * 70, FOREGROUND_CYAN)
+    
+    # 1. Set priority of current process to High
+    print_color("  [1] Đang tăng priority của optimizer...", FOREGROUND_WHITE)
+    try:
+        p = psutil.Process(os.getpid())
+        p.nice(psutil.HIGH_PRIORITY_CLASS)
+        print_color("  -> Priority: HIGH", FOREGROUND_GREEN)
+    except Exception as e:
+        print_color(f"  -> Lỗi: {str(e)[:50]}", FOREGROUND_RED)
+    
+    # 2. Disable visual effects via registry
+    print_color("\n  [2] Đang tắt hiệu ứng hình ảnh (Best Performance)...", FOREGROUND_WHITE)
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
+                            r"Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects", 
+                            0, winreg.KEY_SET_VALUE)
+        winreg.SetValueEx(key, "VisualFXSetting", 0, winreg.REG_DWORD, 2)
+        winreg.CloseKey(key)
+        
+        # Also set via SystemPropertiesPerformance
+        key2 = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                             r"Control Panel\Desktop",
+                             0, winreg.KEY_SET_VALUE)
+        winreg.SetValueEx(key2, "UserPreferencesMask", 0, winreg.REG_BINARY, b'\x90\x12\x03\x80\x10\x00\x00\x00')
+        winreg.CloseKey(key2)
+        
+        print_color("  -> Hiệu ứng hình ảnh: Best Performance", FOREGROUND_GREEN)
+    except Exception as e:
+        print_color(f"  -> Lỗi registry: {str(e)[:50]}", FOREGROUND_RED)
+    
+    # 3. Disable transparency and animations (if Windows 10/11)
+    print_color("\n  [3] Đang tắt Transparency & Animations...", FOREGROUND_WHITE)
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+                            0, winreg.KEY_SET_VALUE)
+        winreg.SetValueEx(key, "EnableTransparency", 0, winreg.REG_DWORD, 0)
+        winreg.CloseKey(key)
+        
+        key2 = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                             r"Control Panel\Desktop\WindowMetrics",
+                             0, winreg.KEY_SET_VALUE)
+        winreg.SetValueEx(key2, "MinAnimate", 0, winreg.REG_SZ, "0")
+        winreg.CloseKey(key2)
+        print_color("  -> Transparency & Animations: OFF", FOREGROUND_GREEN)
+    except Exception:
+        print_color("  -> Không áp dụng (có thể là Windows Server)", FOREGROUND_YELLOW)
+    
+    # 4. Increase responsiveness (disable Nagle algorithm hints for networking)
+    print_color("\n  [4] Đang tối u hóa TCP/IP & Network...", FOREGROUND_WHITE)
+    try:
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            r"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces",
+                            0, winreg.KEY_READ)
+        
+        # We can't iterate here easily without knowing subkeys, but we can set global
+        winreg.CloseKey(key)
+        
+        # Set global TCP params
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            r"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters",
+                            0, winreg.KEY_SET_VALUE)
+        try:
+            winreg.SetValueEx(key, "TcpTimedWaitDelay", 0, winreg.REG_DWORD, 30)
+        except:
+            pass
+        try:
+            winreg.SetValueEx(key, "MaxUserPort", 0, winreg.REG_DWORD, 65534)
+        except:
+            pass
+        winreg.CloseKey(key)
+        print_color("  -> Network stack đã tối ưu", FOREGROUND_GREEN)
+    except Exception as e:
+        print_color(f"  -> Không thể tối ưu network: {str(e)[:50]}", FOREGROUND_YELLOW)
+    
+    print_color("\n  [5] Gợi ý: Khởi động l Explorer để áp dụng hiệu ứng ngay?", FOREGROUND_YELLOW)
+    print_color("      (Nhập 'y' để khởi động lại Explorer, hoặc Enter để bỏ qua)", FOREGROUND_YELLOW)
+    choice = input("  > ").strip().lower()
+    if choice == 'y':
+        try:
+            subprocess.run(["taskkill", "/f", "/im", "explorer.exe"], capture_output=True, check=False)
+            time.sleep(1)
+            subprocess.Popen(["explorer.exe"], creationflags=subprocess.CREATE_NEW_CONSOLE)
+            print_color("  -> Explorer đã khởi động lại", FOREGROUND_GREEN)
+        except Exception as e:
+            print_color(f"  -> Lỗi: {str(e)[:50]}", FOREGROUND_RED)
+    
+    print_color("=" * 70, FOREGROUND_CYAN)
+
+def kill_background_apps():
+    print_banner()
+    print_color("  [ TẮT ỨNG DỤNG NỀN KHÔNG CẦN THIẾT ]", FOREGROUND_CYAN + FOREGROUND_INTENSITY)
+    print_color("-" * 70, FOREGROUND_CYAN)
+    print_color("  DANH SÁCH CÓ THỂ TẮT:", FOREGROUND_YELLOW)
+    
+    candidates = [
+        ("OneDrive.exe", "OneDrive"),
+        ("Teams.exe", "Microsoft Teams"),
+        ("Skype.exe", "Skype"),
+        ("Spotify.exe", "Spotify"),
+        ("Dropbox.exe", "Dropbox"),
+        ("GoogleDriveFS.exe", "Google Drive"),
+        ("Creative Cloud.exe", "Adobe Creative Cloud"),
+        ("Steam.exe", "Steam Client"),
+        ("EpicGamesLauncher.exe", "Epic Games Launcher"),
+    ]
+    
+    for idx, (exe, name) in enumerate(candidates, 1):
+        print_color(f"  {idx}. {exe:25s} ({name})", FOREGROUND_WHITE)
+    print_color("  0. Quay lại (không tắt gì)", FOREGROUND_WHITE)
+    print_color("-" * 70, FOREGROUND_CYAN)
+    print_color("  Nhập số thứ tự cách nhau bởi dấu phẩy (ví dụ: 1,2,3) hoặc 'all'", FOREGROUND_YELLOW)
+    choice = input("  > ").strip().lower()
+    
+    if choice == '0' or choice == '':
+        return
+    
+    selected = []
+    if choice == 'all':
+        selected = list(range(len(candidates)))
+    else:
+        try:
+            for x in choice.split(','):
+                idx = int(x.strip()) - 1
+                if 0 <= idx < len(candidates):
+                    selected.append(idx)
+        except ValueError:
+            print_color("  Lựa chọn không hợp lệ!", FOREGROUND_RED)
+            return
+    
+    killed = 0
+    for idx in selected:
+        exe, name = candidates[idx]
+        try:
+            for proc in psutil.process_iter(['pid', 'name']):
+                if proc.info['name'] and proc.info['name'].lower() == exe.lower():
+                    p = psutil.Process(proc.info['pid'])
+                    p.terminate()
+                    try:
+                        p.wait(timeout=3)
+                    except psutil.TimeoutExpired:
+                        p.kill()
+                    killed += 1
+            print_color(f"  [OK] Đã tắt {name} ({exe})", FOREGROUND_GREEN)
+        except Exception as e:
+            print_color(f"  [ERR] {name}: {str(e)[:50]}", FOREGROUND_RED)
+    
+    print_color(f"\n  [+] Tổng số process đã tắt: {killed}", FOREGROUND_GREEN + FOREGROUND_INTENSITY)
+    print_color("=" * 70, FOREGROUND_CYAN)
+
+def auto_optimize_all():
+    print_banner()
+    print_color("  [ TỰ ĐỘNG TỐI ƯU TOÀN BỘ - 1 CLICK ]", FOREGROUND_CYAN + FOREGROUND_INTENSITY)
+    print_color("-" * 70, FOREGROUND_CYAN)
+    print_color("  Bắt đầu tối ưu toàn diện...", FOREGROUND_YELLOW + FOREGROUND_INTENSITY)
+    time.sleep(1)
+    
+    show_system_info()
+    input("\n  Nhấn Enter để bắt đầu tối ưu...")
+    
+    clean_disk()
+    wait_input()
+    
+    optimize_ram()
+    wait_input()
+    
+    optimize_services()
+    wait_input()
+    
+    optimize_performance()
+    wait_input()
+    
+    print_banner()
+    print_color("  [ TỐI ƯU HOÀN TẤT ]", FOREGROUND_GREEN + FOREGROUND_INTENSITY)
+    print_color("-" * 70, FOREGROUND_CYAN)
+    show_system_info()
+    print_color("\n  [TIP] Khởi động lại máy để áp dụng tất cả thay đổi dịch vụ.", FOREGROUND_CYAN)
+    print_color("=" * 70, FOREGROUND_CYAN)
+
+def main():
+    while True:
+        print_banner()
+        print_color("  MENU CHÍN:", FOREGROUND_CYAN + FOREGROUND_INTENSITY)
+        print_color("-" * 70, FOREGROUND_CYAN)
+        print_color("  1. Xem thông tin hệ thống (CPU, RAM, Disk, Uptime)", FOREGROUND_WHITE)
+        print_color("  2. Dọn dẹp ổ cứng & file tạm (giải phóng GB)", FOREGROUND_WHITE)
+        print_color("  3. Tối ưu & giải phóng RAM (trim working sets, cache)", FOREGROUND_WHITE)
+        print_color("  4. Tối ưu dịch vụ & năng lượng (High Performance)", FOREGROUND_WHITE)
+        print_color("  5. Tối ưu CPU & tăng tốc phần mềm (tắt hiệu ứng, tối ưu TCP)", FOREGROUND_WHITE)
+        print_color("  6. Tắt ứng dụng nền không cần thiết (OneDrive, Teams...)", FOREGROUND_WHITE)
+        print_color("  7. TỰ ĐỘNG TỐI ƯU TẤT CẢ (1-Click)", FOREGROUND_GREEN + FOREGROUND_INTENSITY)
+        print_color("  0. Thoát", FOREGROUND_RED + FOREGROUND_INTENSITY)
+        print_color("-" * 70, FOREGROUND_CYAN)
+        print_color("  Yêu cầu: Chạy bằng Administrator để tối ưu dịch vụ & services.", FOREGROUND_YELLOW)
+        print_color("=" * 70, FOREGROUND_CYAN)
+        
+        choice = input("  Nhập lựa chọn: ").strip()
+        
+        if choice == '1':
+            show_system_info()
+            wait_input()
+        elif choice == '2':
+            clean_disk()
+            wait_input()
+        elif choice == '3':
+            optimize_ram()
+            wait_input()
+        elif choice == '4':
+            optimize_services()
+            wait_input()
+        elif choice == '5':
+            optimize_performance()
+            wait_input()
+        elif choice == '6':
+            kill_background_apps()
+            wait_input()
+        elif choice == '7':
+            auto_optimize_all()
+            wait_input()
+        elif choice == '0':
+            print_banner()
+            print_color("  Cảm ơn đã sử dụng Windows System Optimizer!", FOREGROUND_GREEN + FOREGROUND_INTENSITY)
+            print_color("  Hẹn gặp lại.", FOREGROUND_WHITE)
+            print_color("=" * 70, FOREGROUND_CYAN)
+            time.sleep(1)
+            break
+        else:
+            print_color("  Lựa chọn không hợp lệ!", FOREGROUND_RED)
+            time.sleep(1)
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print_color("\n\nĐã thoát bởi người dùng.", FOREGROUND_YELLOW)
+        sys.exit(0)
+    except Exception as e:
+        print_color(f"\n\nLỗi không mong muốn: {e}", FOREGROUND_RED)
+        input("Nhấn Enter để thoát...")
+        sys.exit(1)

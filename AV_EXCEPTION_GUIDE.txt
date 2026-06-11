@@ -1,0 +1,43 @@
+HUONG DAN THEM NGOAI LE CHO WINDOWS DEFENDER
+============================================
+
+Neu file .exe bi Windows Defender xoa hoac chan, hay lam theo cac buoc sau:
+
+CACH 1: Them thu muc vao loai tru (KHUYEN NGHI)
+---------------------------------------------
+1. Mo Windows Security (Windows Defender)
+2. Vao: Virus & threat protection > Virus & threat protection settings > Manage settings
+3. Keo xuong "Exclusions" > chon "Add or remove exclusions"
+4. Chon "Add an exclusion" > "Folder"
+5. Them thu muc chua tool, vi du: C:\Tools\WinOptimizer\
+
+CACH 2: Tat tam thoi Real-time protection (chi khi chay)
+--------------------------------------------------------
+1. Mo Windows Security
+2. Vao: Virus & threat protection > Manage settings
+3. Tat "Real-time protection" (tu dong bat lai sau khoi dong lai)
+4. Chay file .exe
+5. Bat lai Real-time protection sau khi chay xong
+
+CACH 3: Dung PowerShell them ngoai le (nhanh cho VPS/Server)
+-----------------------------------------------------------
+Chay PowerShell voi quyen Administrator:
+
+    Add-MpPreference -ExclusionPath "C:\Duong\Dan\Toi\Thu\Muc\WinOptimizer"
+
+HOAC them ngoai le cho file cu the:
+
+    Add-MpPreference -ExclusionPath "C:\Duong\Dan\Toi\WinOptimizer.exe"
+
+LUU Y QUAN TRONG:
+-----------------
+- Chi them ngoai le cho file/tool ma ban TU TIN la an toan (tu nguon minh tao).
+- Khong bao gio them ngoai le cho file tai tu Internet khong ro nguon goc.
+- PowerShell script (.ps1) va Batch (.bat) HIEM KHI bi xoa vi chung la cong cu he thong co san.
+
+KHUYEN NGHI CHO VPS:
+--------------------
+Neu VPS khong co Python va khong muon lo false positive:
+> Dung file "Run-Optimizer.bat" + "WinOptimizer.ps1" (khong bi AV xoa).
+Neu muon dung .exe:
+> Dung file trong thu muc "dist\WinOptimizer\" (build --onedir, it bi detect hon).

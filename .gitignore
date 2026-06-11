@@ -1,0 +1,22 @@
+# Build artifacts
+build/
+dist/
+__pycache__/
+*.spec
+
+# Python
+*.pyc
+*.pyo
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# Windows
+*.exe
+!Run-Optimizer.bat
+!build.bat
+!build_safe.bat
+*.dll
+*.pyd
